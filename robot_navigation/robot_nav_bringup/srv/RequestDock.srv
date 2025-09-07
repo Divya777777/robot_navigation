@@ -1,0 +1,4 @@
+# RequestDock.srv
+---
+bool success
+string message

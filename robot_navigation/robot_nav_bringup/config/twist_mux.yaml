@@ -1,0 +1,22 @@
+# twist_mux configuration for robot navigation
+# Higher priority values take precedence over lower ones
+
+# Topics that will be muxed
+topics:
+  # High priority - Manual control or emergency override
+  priority_control:
+    topic: cmd_vel_new
+    timeout: 0.5
+    priority: 10
+  
+  # Medium priority - Navigation system
+  navigation:
+    topic: cmd_vel_nav 
+    timeout: 1.0
+    priority: 5
+  
+  # Low priority - Joystick/teleop (optional)
+  teleop:
+    topic: cmd_vel_teleop
+    timeout: 0.5
+    priority: 3

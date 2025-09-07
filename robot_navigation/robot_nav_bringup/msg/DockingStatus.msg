@@ -1,0 +1,12 @@
+# DockingStatus.msg
+uint8 status
+string message
+
+# Status codes
+uint8 DOCKING_IDLE=0
+uint8 DOCKING_IN_PROGRESS=1
+uint8 DOCKING_SUCCESS=2
+uint8 DOCKING_FAILED=3
+uint8 UNDOCKING_IN_PROGRESS=4
+uint8 UNDOCKING_SUCCESS=5
+uint8 UNDOCKING_FAILED=6

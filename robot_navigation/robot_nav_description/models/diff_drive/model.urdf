@@ -167,6 +167,29 @@
     <origin xyz="0.8 0 0.3" rpy="0 0 0"/>
   </joint>
 
+  <!-- ROS2 Control -->
+  <ros2_control name="diff_drive_controller" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-10.0</param>
+        <param name="max">10.0</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-10.0</param>
+        <param name="max">10.0</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
   <!-- ✅ OPTIMIZED: Gazebo Friction Properties for Front-Wheel Drive -->
   <gazebo reference="left_wheel">
     <mu1>3.0</mu1>                    <!-- Very high static friction for drive wheels -->
@@ -192,8 +215,8 @@
 
   <!-- ✅ CRITICAL: Proper caster wheel physics -->
   <gazebo reference="caster">
-    <mu1>0.1</mu1>                    <!-- ZERO friction - let it slide freely -->
-    <mu2>0.05</mu2>                    <!-- ZERO friction in all directions -->
+    <mu1>1.0</mu1>                    <!-- ZERO friction - let it slide freely -->
+    <mu2>0.2</mu2>                    <!-- ZERO friction in all directions -->
     <fdir1>0 0 0</fdir1>              <!-- No preferred friction direction -->
     <minDepth>0.005</minDepth>
     <maxVel>0.1</maxVel>
@@ -202,49 +225,10 @@
     <material>Gazebo/Grey</material>
   </gazebo>
 
-  <!-- ✅ ENHANCED: Gazebo Differential Drive Plugin with Anti-Drift Settings -->
+  <!-- Gazebo ROS Control Plugin -->
   <gazebo>
-    <plugin filename="libgz-sim-diff-drive-system.so" name="gz::sim::systems::DiffDrive">
-      <!-- Joint configuration -->
-      <left_joint>left_wheel_joint</left_joint>
-      <right_joint>right_wheel_joint</right_joint>
-            <!-- In diff_drive plugin -->
-      <wheel_slip_compliance_lateral>0.01</wheel_slip_compliance_lateral>
-      <wheel_slip_compliance_longitudinal>0.01</wheel_slip_compliance_longitudinal>
-      <!-- ✅ ACCURATE: Physical parameters -->
-      <wheel_separation>1.25</wheel_separation>
-      <wheel_radius>0.3</wheel_radius>
-      
-      <!-- ✅ ULTRA HIGH: Odometry frequency for precise tracking -->
-      <odom_publish_frequency>500</odom_publish_frequency>
-      
-      <!-- Topic configuration -->
-      <topic>cmd_vel</topic>
-      <odom_topic>diff_drive/odom</odom_topic>
-      
-      <!-- Frame configuration -->
-      <frame_id>diff_drive/odom</frame_id>
-      <child_frame_id>diff_drive/chassis</child_frame_id>
-      
-      <!-- ✅ CONSERVATIVE: Reduced acceleration limits -->
-      <max_linear_acceleration>2.0</max_linear_acceleration>
-      <min_linear_acceleration>-2.0</min_linear_acceleration>
-      <max_angular_acceleration>2.0</max_angular_acceleration>
-      <min_angular_acceleration>-2.0</min_angular_acceleration>
-      
-      <!-- ✅ REDUCED: Lower velocity limits -->
-      <max_linear_velocity>0.8</max_linear_velocity>
-      <min_linear_velocity>-0.1</min_linear_velocity>
-      <max_angular_velocity>0.2</max_angular_velocity>
-      <min_angular_velocity>-0.2</min_angular_velocity>
-      
-      <!-- TF publishing -->
-      <publish_odom_tf>true</publish_odom_tf>
-      
-      <!-- ✅ ANTI-SLIP: Wheel slip prevention -->
-      <wheel_slip_compliance_lateral>0</wheel_slip_compliance_lateral>
-      <wheel_slip_compliance_longitudinal>0</wheel_slip_compliance_longitudinal>
-      
+    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+      <parameters>/home/divya/template_ws/src/robot_navigation/robot_nav_bringup/config/controller_config.yaml</parameters>
     </plugin>
     
     <!-- ✅ ADDED: Physics settings for stable simulation -->
@@ -296,7 +280,7 @@
         </ray>
         <plugin filename="libgazebo_ros_gpu_lidar.so" name="gazebo_ros_gpu_lidar">
           <topicName>scan</topicName>
-          <frameName>lidar_link</frameName>
+          <frame_name>lidar_link</frame_name>
         </plugin>
       </sensor>
     </gazebo>

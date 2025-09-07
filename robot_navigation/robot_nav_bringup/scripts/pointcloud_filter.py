@@ -17,7 +17,7 @@ class PointCloudFilter(Node):
             10)
         self.publisher = self.create_publisher(PointCloud2, '/filtered_points', 10)
         self.voxel_size = 0.08  # Increased for better performance
-        self.max_range = 3.0    # Maximum range to process
+        self.max_range = 5.0    # Maximum range to process
         self.min_range = 0.1    # Minimum range to process
         self.get_logger().info('PointCloud Filter node started')
 

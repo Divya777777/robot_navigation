@@ -9,24 +9,46 @@
   <author>Michael Carroll</author>
   <author>Dharini Dutia</author>
 
-  <depend>joint_state_publisher_gui</depend>
+  <!-- Build tool dependencies -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
 
-  <exec_depend>gazebo_ros2_control</exec_depend>
-  <depend>ros_gz</depend>
-  <depend>sdformat_urdf</depend>
-  <depend>robot_nav_description</depend>
-  <depend>robot_nav_gazebo</depend>
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>nav_msgs</exec_depend>
+  <!-- Build and execution dependencies -->
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
+  
+  <!-- ROS 2 control dependencies -->
   <depend>ros2_control</depend>
   <depend>ros2_controllers</depend>
-  <depend>gz_ros2_control</depend>
   <depend>controller_manager</depend>
   <depend>diff_drive_controller</depend>
   <depend>joint_state_broadcaster</depend>
-  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <!-- Simulation dependencies -->
+  <depend>gazebo_ros2_control</depend>
+  <depend>gz_ros2_control</depend>
+  <depend>ros_gz</depend>
+  <depend>sdformat_urdf</depend>
+  
+  <!-- Project dependencies -->
+  <depend>robot_nav_description</depend>
+  <depend>robot_nav_gazebo</depend>
+  
+  <!-- GUI dependencies -->
+  <depend>joint_state_publisher_gui</depend>
 
+  <!-- Runtime dependencies for message generation -->
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <!-- Interface package membership -->
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <!-- Testing dependencies -->
   <test_depend>ament_lint_auto</test_depend>
 
   <export>

@@ -2,216 +2,351 @@
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import PointCloud2
-from geometry_msgs.msg import Twist
-import sensor_msgs_py.point_cloud2 as pc2
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import numpy as np
-from collections import deque
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist
 
-class ObstacleSafetyNode(Node):
+class ObstacleAvoidanceNode(Node):
     def __init__(self):
-        super().__init__('obstacle_safety_node')
+        super().__init__('obstacle_avoidance_node')
         
-        # Parameters
-        self.declare_parameter('min_obstacle_distance', 1.0)  # meters
-        self.declare_parameter('safety_distance', 1.5)       # meters
-        self.declare_parameter('stop_deceleration', 0.5)     # m/s²
-        self.declare_parameter('start_acceleration', 0.3)    # m/s²
-        self.declare_parameter('max_speed_reduction', 0.3)   # max speed when obstacle detected
-        self.declare_parameter('point_cloud_topic', '/diff_drive/rgbd/points')
-        self.declare_parameter('cmd_vel_topic', '/diff_drive/cmd_vel')
+        # Initialize parameters
+        self.current_cmd_vel = Twist()
+        self.modified_cmd_vel = Twist()
+        
+        # Declare and get parameters
+        self.declare_parameter('obstacle_threshold', 1.0)
+        self.declare_parameter('safety_zone_width', 0.3)
+        self.declare_parameter('safety_zone_height', 0.5)
+        self.declare_parameter('max_deceleration_rate', 0.2)
+        self.declare_parameter('max_acceleration_rate', 0.05)
+        self.declare_parameter('min_speed_factor', 0.0)
+        self.declare_parameter('depth_topic', '/diff_drive/depth/image_raw')
+        self.declare_parameter('input_cmd_vel_topic', '/diff_drive/cmd_vel')
         self.declare_parameter('output_cmd_vel_topic', '/cmd_vel_new')
+        self.declare_parameter('debug_mode', True)
         
-        # Get parameters
-        self.min_obstacle_distance = self.get_parameter('min_obstacle_distance').value
-        self.safety_distance = self.get_parameter('safety_distance').value
-        self.stop_deceleration = self.get_parameter('stop_deceleration').value
-        self.start_acceleration = self.get_parameter('start_acceleration').value
-        self.max_speed_reduction = self.get_parameter('max_speed_reduction').value
-        point_cloud_topic = self.get_parameter('point_cloud_topic').value
-        cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
-        output_cmd_vel_topic = self.get_parameter('output_cmd_vel_topic').value
+        # Get parameter values
+        self.obstacle_threshold = self.get_parameter('obstacle_threshold').get_parameter_value().double_value
+        self.safety_zone_width = self.get_parameter('safety_zone_width').get_parameter_value().double_value
+        self.safety_zone_height = self.get_parameter('safety_zone_height').get_parameter_value().double_value
+        self.max_deceleration_rate = self.get_parameter('max_deceleration_rate').get_parameter_value().double_value
+        self.max_acceleration_rate = self.get_parameter('max_acceleration_rate').get_parameter_value().double_value
+        self.min_speed_factor = self.get_parameter('min_speed_factor').get_parameter_value().double_value
+        self.debug_mode = self.get_parameter('debug_mode').get_parameter_value().bool_value
+        
+        # Topic names
+        depth_topic = self.get_parameter('depth_topic').get_parameter_value().string_value
+        input_cmd_vel_topic = self.get_parameter('input_cmd_vel_topic').get_parameter_value().string_value
+        output_cmd_vel_topic = self.get_parameter('output_cmd_vel_topic').get_parameter_value().string_value
         
         # State variables
         self.obstacle_detected = False
+        self.current_speed_factor = 1.0
+        self.last_obstacle_time = self.get_clock().now()
+        self.last_log_time = self.get_clock().now()
+        self.depth_received = False
+        self.cmd_vel_received = False
         self.min_distance = float('inf')
-        self.last_cmd_vel = Twist()
-        self.cmd_vel_buffer = deque(maxlen=10)
-        self.current_speed = 0.0
         
-        # Publishers and Subscribers
-        self.point_cloud_sub = self.create_subscription(
-            PointCloud2, point_cloud_topic, self.point_cloud_callback, 10)
+        # QoS Profiles
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
         
+        reliable_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
+        # Create subscribers
         self.cmd_vel_sub = self.create_subscription(
-            Twist, cmd_vel_topic, self.cmd_vel_callback, 10)
+            Twist,
+            input_cmd_vel_topic,
+            self.cmd_vel_callback,
+            reliable_qos
+        )
         
+        self.depth_sub = self.create_subscription(
+            Image,
+            depth_topic,
+            self.depth_callback,
+            sensor_qos
+        )
+        
+        # Create publisher
         self.cmd_vel_pub = self.create_publisher(
-            Twist, output_cmd_vel_topic, 10)
+            Twist,
+            output_cmd_vel_topic,
+            reliable_qos
+        )
         
-        # Timer for continuous control
-        self.control_timer = self.create_timer(0.1, self.control_callback)  # 10 Hz
+        # Create timer for publishing modified velocities
+        self.publish_timer = self.create_timer(0.05, self.publish_modified_velocity)  # 20Hz
         
-        self.get_logger().info("Obstacle Safety Node started")
-        self.get_logger().info(f"Monitoring point cloud from: {point_cloud_topic}")
-        self.get_logger().info(f"Safety distance: {self.safety_distance}m")
+        # Debug timer
+        if self.debug_mode:
+            self.debug_timer = self.create_timer(1.0, self.debug_status)
+        
+        self.get_logger().info("=== Obstacle Avoidance Node Initialized ===")
+        self.get_logger().info(f"Obstacle threshold: {self.obstacle_threshold}m")
+        self.get_logger().info(f"Safety zone: {self.safety_zone_width} x {self.safety_zone_height}")
+        self.get_logger().info(f"Subscribed to depth: {depth_topic}")
+        self.get_logger().info(f"Subscribed to cmd_vel: {input_cmd_vel_topic}")
+        self.get_logger().info(f"Publishing to: {output_cmd_vel_topic}")
+        self.get_logger().info(f"Debug mode: {self.debug_mode}")
+        self.get_logger().info("=======================================")
     
-    def point_cloud_callback(self, msg):
-        """Process point cloud data to detect obstacles"""
-        try:
-            # Read points from the point cloud - handle different field structures
-            points = []
-            
-            # Try to read points with different field combinations
+    def discover_depth_topic(self):
+        """Auto-discover depth topics"""
+        import time
+        time.sleep(1)  # Wait for topic discovery
+        
+        topic_names = self.get_topic_names_and_types()
+        depth_topics = []
+        
+        for topic_name, topic_types in topic_names:
+            if 'sensor_msgs/msg/Image' in topic_types and 'depth' in topic_name.lower():
+                depth_topics.append(topic_name)
+        
+        if depth_topics:
+            self.get_logger().info(f"Found depth topics: {depth_topics}")
+            return depth_topics[0]  # Use first found
+        else:
+            self.get_logger().warn("No depth topics found!")
+            return None
+    
+    def create_depth_subscriber(self, depth_topic):
+        """Create depth subscriber with fallback QoS profiles"""
+        qos_profiles = [
+            # Try BEST_EFFORT first (common for sensors)
+            QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1
+            ),
+            # Fallback to RELIABLE
+            QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1
+            ),
+            # Try with different durability
+            QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                durability=DurabilityPolicy.VOLATILE
+            )
+        ]
+        
+        for i, qos in enumerate(qos_profiles):
             try:
-                # First try with x, y, z fields
-                gen = pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)
-                points = list(gen)
-            except:
-                try:
-                    # If that fails, try reading all fields and extract x, y, z
-                    gen = pc2.read_points(msg, skip_nans=True)
-                    for p in gen:
-                        if len(p) >= 3:
-                            points.append([p[0], p[1], p[2]])  # x, y, z
-                except Exception as e:
-                    self.get_logger().warn(f"Could not read point cloud: {e}")
-                    return
-            
-            if len(points) == 0:
-                self.min_distance = float('inf')
-                self.obstacle_detected = False
-                return
-            
-            # Convert to numpy array
-            points_array = np.array(points)
-            
-            # Calculate distances in front of the robot (ignore z-axis for ground plane)
-            # Filter points that are in front of the robot (positive x)
-            front_points = points_array[points_array[:, 0] > 0]  # x > 0
-            
-            if len(front_points) == 0:
-                self.min_distance = float('inf')
-                self.obstacle_detected = False
-                return
-            
-            # Calculate Euclidean distance (x, y only - ignore height)
-            distances = np.sqrt(front_points[:, 0]**2 + front_points[:, 1]**2)
-            
-            # Find minimum distance
-            self.min_distance = np.min(distances)
-            
-            # Check if obstacle is within safety distance
-            self.obstacle_detected = (self.min_distance <= self.safety_distance)
-            
-            # Log for debugging
-            if self.obstacle_detected:
-                self.get_logger().debug(
-                    f"Obstacle detected at {self.min_distance:.2f}m", 
-                    throttle_duration_sec=1.0)
-                
-        except Exception as e:
-            self.get_logger().error(f"Error processing point cloud: {str(e)}")
+                self.get_logger().info(f"Trying to subscribe to {depth_topic} with QoS profile {i+1}")
+                self.depth_sub = self.create_subscription(
+                    Image,
+                    depth_topic,
+                    self.depth_callback,
+                    qos
+                )
+                self.get_logger().info(f"Successfully subscribed to {depth_topic}")
+                break
+            except Exception as e:
+                self.get_logger().warn(f"QoS profile {i+1} failed: {e}")
+                continue
+    
+    def debug_status(self):
+        """Debug function to print status"""
+        self.get_logger().info(f"=== DEBUG STATUS ===")
+        self.get_logger().info(f"Depth received: {self.depth_received}")
+        self.get_logger().info(f"Cmd_vel received: {self.cmd_vel_received}")
+        self.get_logger().info(f"Obstacle detected: {self.obstacle_detected}")
+        self.get_logger().info(f"Min distance: {self.min_distance:.2f}m")
+        self.get_logger().info(f"Speed factor: {self.current_speed_factor:.2f}")
+        self.get_logger().info(f"Input cmd_vel - linear.x: {self.current_cmd_vel.linear.x:.2f}")
+        self.get_logger().info(f"Output cmd_vel - linear.x: {self.modified_cmd_vel.linear.x:.2f}")
+        self.get_logger().info("==================")
     
     def cmd_vel_callback(self, msg):
-        """Store the latest command velocity"""
-        self.cmd_vel_buffer.append(msg)
-        if self.cmd_vel_buffer:
-            self.last_cmd_vel = self.cmd_vel_buffer[-1]
+        """Store the incoming velocity commands"""
+        self.current_cmd_vel = msg
+        self.cmd_vel_received = True
+        if self.debug_mode and abs(msg.linear.x) > 0.01:
+            self.get_logger().info(f"Received cmd_vel: linear.x={msg.linear.x:.2f}, angular.z={msg.angular.z:.2f}")
     
-    def control_callback(self):
-        """Apply safety control based on obstacle detection"""
-        if not self.cmd_vel_buffer:
-            return
+    def image_to_numpy(self, img_msg):
+        """Convert ROS2 Image message to numpy array without cv_bridge"""
+        try:
+            height = img_msg.height
+            width = img_msg.width
+            encoding = img_msg.encoding
+            
+            if self.debug_mode:
+                self.get_logger().info(f"Image: {width}x{height}, encoding: {encoding}")
+            
+            # Convert image data to numpy array
+            if encoding in ["16UC1", "mono16"]:
+                dtype = np.uint16
+                depth_image = np.frombuffer(img_msg.data, dtype=dtype).reshape(height, width)
+                # Convert to meters (assuming input is in millimeters)
+                depth_image = depth_image.astype(np.float32) / 1000.0
+            elif encoding == "32FC1":
+                dtype = np.float32
+                depth_image = np.frombuffer(img_msg.data, dtype=dtype).reshape(height, width)
+            else:
+                # Try to handle other encodings
+                self.get_logger().warn(f"Unknown encoding: {encoding}, trying as 16-bit")
+                dtype = np.uint16
+                try:
+                    depth_image = np.frombuffer(img_msg.data, dtype=dtype).reshape(height, width)
+                    depth_image = depth_image.astype(np.float32) / 1000.0
+                except:
+                    self.get_logger().error(f"Failed to decode image with encoding {encoding}")
+                    return None
+            
+            return depth_image
+            
+        except Exception as e:
+            self.get_logger().error(f"Error converting image: {e}")
+            return None
+    
+    def depth_callback(self, msg):
+        """Process depth image and detect obstacles"""
+        self.depth_received = True
         
-        # Get the latest command velocity
-        target_cmd_vel = self.last_cmd_vel
-        
-        # Create safety-controlled command
-        safe_cmd_vel = Twist()
+        try:
+            # Convert ROS2 Image message to numpy array
+            depth_image = self.image_to_numpy(msg)
+            
+            if depth_image is None:
+                return
+            
+            # Get image dimensions
+            height, width = depth_image.shape
+            
+            # Define safety zone (center portion of the image)
+            zone_width = int(width * self.safety_zone_width)
+            zone_height = int(height * self.safety_zone_height)
+            
+            start_x = max(0, (width - zone_width) // 2)
+            end_x = min(width, start_x + zone_width)
+            start_y = max(0, height - zone_height)
+            end_y = height
+            
+            if self.debug_mode:
+                self.get_logger().info(f"Safety zone: [{start_y}:{end_y}, {start_x}:{end_x}]")
+            
+            # Extract safety zone
+            safety_zone = depth_image[start_y:end_y, start_x:end_x]
+            
+            # Remove invalid depth values (NaN, inf, 0)
+            valid_mask = np.isfinite(safety_zone) & (safety_zone > 0.1) & (safety_zone < 10.0)  # Reasonable depth range
+            valid_depths = safety_zone[valid_mask]
+            
+            if len(valid_depths) > 0:
+                # Find minimum distance in safety zone
+                self.min_distance = np.min(valid_depths)
+                mean_distance = np.mean(valid_depths)
+                
+                # Check if obstacle is detected
+                prev_obstacle = self.obstacle_detected
+                self.obstacle_detected = self.min_distance < self.obstacle_threshold
+                
+                if self.debug_mode:
+                    self.get_logger().info(f"Valid depths: {len(valid_depths)}, Min: {self.min_distance:.2f}m, Mean: {mean_distance:.2f}m")
+                
+                current_time = self.get_clock().now()
+                
+                if self.obstacle_detected:
+                    if not prev_obstacle or (current_time - self.last_log_time).nanoseconds > 1e9:
+                        self.get_logger().warn(f"OBSTACLE DETECTED! Distance: {self.min_distance:.2f}m (threshold: {self.obstacle_threshold}m)")
+                        self.last_log_time = current_time
+                    self.last_obstacle_time = current_time
+                else:
+                    if prev_obstacle or (current_time - self.last_log_time).nanoseconds > 3e9:
+                        self.get_logger().info(f"Path clear - closest: {self.min_distance:.2f}m")
+                        self.last_log_time = current_time
+            else:
+                # No valid depth data
+                self.obstacle_detected = False
+                self.min_distance = float('inf')
+                current_time = self.get_clock().now()
+                if (current_time - self.last_log_time).nanoseconds > 3e9:
+                    self.get_logger().warn("No valid depth data in safety zone")
+                    self.last_log_time = current_time
+                
+        except Exception as e:
+            self.get_logger().error(f"Error processing depth image: {e}")
+    
+    def update_speed_factor(self):
+        """Gradually adjust speed factor based on obstacle detection"""
+        prev_factor = self.current_speed_factor
         
         if self.obstacle_detected:
-            # Obstacle detected - reduce speed gradually
-            safe_cmd_vel = self.apply_obstacle_safety(target_cmd_vel)
+            # Gradually decrease speed when obstacle detected
+            target_factor = self.min_speed_factor
+            if self.current_speed_factor > target_factor:
+                self.current_speed_factor = max(
+                    target_factor,
+                    self.current_speed_factor - self.max_deceleration_rate
+                )
         else:
-            # No obstacle - gradually return to normal speed
-            safe_cmd_vel = self.return_to_normal_speed(target_cmd_vel)
+            # Gradually increase speed when path is clear
+            target_factor = 1.0
+            if self.current_speed_factor < target_factor:
+                self.current_speed_factor = min(
+                    target_factor,
+                    self.current_speed_factor + self.max_acceleration_rate
+                )
         
-        # Update current speed
-        self.current_speed = safe_cmd_vel.linear.x
+        # Ensure speed factor stays within bounds
+        self.current_speed_factor = max(0.0, min(1.0, self.current_speed_factor))
         
-        # Publish the safety-controlled command
-        self.cmd_vel_pub.publish(safe_cmd_vel)
+        if self.debug_mode and abs(self.current_speed_factor - prev_factor) > 0.01:
+            self.get_logger().info(f"Speed factor changed: {prev_factor:.2f} -> {self.current_speed_factor:.2f}")
     
-    def apply_obstacle_safety(self, target_cmd_vel):
-        """Gradually reduce speed when obstacle is detected"""
-        safe_cmd_vel = Twist()
+    def publish_modified_velocity(self):
+        """Publish modified velocity commands with obstacle avoidance"""
+        # Update speed factor based on current obstacle status
+        self.update_speed_factor()
         
-        # Calculate speed reduction factor based on distance
-        if self.min_distance <= self.min_obstacle_distance:
-            # Emergency stop - too close
-            safe_cmd_vel.linear.x = 0.0
-            safe_cmd_vel.angular.z = 0.0
-            
-            self.get_logger().warn(
-                f"EMERGENCY STOP: Obstacle too close at {self.min_distance:.2f}m")
-                
+        # Create modified velocity command
+        self.modified_cmd_vel.linear.x = self.current_cmd_vel.linear.x * self.current_speed_factor
+        self.modified_cmd_vel.linear.y = self.current_cmd_vel.linear.y * self.current_speed_factor
+        self.modified_cmd_vel.linear.z = self.current_cmd_vel.linear.z * self.current_speed_factor
+        
+        # Reduce angular velocity when obstacle detected but keep some maneuverability
+        if self.obstacle_detected:
+            angular_factor = max(0.5, self.current_speed_factor)  # Keep more turning ability
         else:
-            # Gradual reduction based on distance
-            distance_ratio = (self.min_distance - self.min_obstacle_distance) / \
-                            (self.safety_distance - self.min_obstacle_distance)
-            reduction_factor = max(0.0, min(1.0, distance_ratio))
-            reduction_factor = reduction_factor * (1.0 - self.max_speed_reduction) + self.max_speed_reduction
+            angular_factor = self.current_speed_factor
             
-            # Apply reduction with acceleration limits
-            target_speed = target_cmd_vel.linear.x * reduction_factor
-            max_decel = self.stop_deceleration * 0.1  # 0.1s timer period
-            
-            safe_cmd_vel.linear.x = max(target_speed, self.current_speed - max_decel)
-            
-            # Apply more aggressive reduction to angular velocity near obstacles
-            angular_reduction = reduction_factor * 0.5  # Reduce turning more
-            safe_cmd_vel.angular.z = target_cmd_vel.angular.z * angular_reduction
-            
-            # Log safety action
-            self.get_logger().info(
-                f"SAFETY: Obstacle at {self.min_distance:.2f}m, "
-                f"Speed reduced to {safe_cmd_vel.linear.x:.2f}m/s",
-                throttle_duration_sec=0.5)
+        self.modified_cmd_vel.angular.x = self.current_cmd_vel.angular.x * angular_factor
+        self.modified_cmd_vel.angular.y = self.current_cmd_vel.angular.y * angular_factor
+        self.modified_cmd_vel.angular.z = self.current_cmd_vel.angular.z * angular_factor
         
-        return safe_cmd_vel
-    
-    def return_to_normal_speed(self, target_cmd_vel):
-        """Gradually return to normal speed when obstacle is cleared"""
-        safe_cmd_vel = Twist()
+        # Always publish, even if zero
+        self.cmd_vel_pub.publish(self.modified_cmd_vel)
         
-        # Add acceleration limiting for smoother transitions
-        max_accel = self.start_acceleration * 0.1  # 0.1s timer period
-        
-        # Gradually accelerate to target speed
-        target_speed = target_cmd_vel.linear.x
-        safe_cmd_vel.linear.x = min(self.current_speed + max_accel, target_speed)
-        
-        # Return angular velocity to normal
-        safe_cmd_vel.angular.z = target_cmd_vel.angular.z
-        
-        # Log return to normal
-        if abs(safe_cmd_vel.linear.x - target_speed) < 0.01:
-            self.get_logger().info("CLEAR: No obstacles detected, normal speed restored")
-        
-        return safe_cmd_vel
+        # Debug output for significant changes
+        if self.debug_mode and (abs(self.current_cmd_vel.linear.x) > 0.01 or abs(self.modified_cmd_vel.linear.x) > 0.01):
+            self.get_logger().info(f"Publishing: input={self.current_cmd_vel.linear.x:.2f} -> output={self.modified_cmd_vel.linear.x:.2f} (factor={self.current_speed_factor:.2f})")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ObstacleSafetyNode()
     
     try:
+        node = ObstacleAvoidanceNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

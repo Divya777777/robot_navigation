@@ -158,17 +158,17 @@ controller_server:
       max_vel_theta: 0.4       # Reduced from 0.8
       
       min_speed_xy: 0.0
-      max_speed_xy: 0.3           # Match max_vel_x
+      max_speed_xy: 0.8          # Match max_vel_x
       min_speed_theta: 0.0
-      acc_lim_x: 1.0              # Very gentle acceleration
+      acc_lim_x: 1.5             # Very gentle acceleration
       acc_lim_y: 0.0
       
       # ✅ VERY GENTLE: Minimal acceleration to prevent slip
-      acc_lim_theta: 0.4     # Further reduced
+      acc_lim_theta: 0.8     # Further reduced
       
-      decel_lim_x: -1.0           # Gentle deceleration
+      decel_lim_x: -1.5          # Gentle deceleration
       decel_lim_y: 0.0
-      decel_lim_theta: -0.4       # Match acceleration limit
+      decel_lim_theta: -0.8       # Match acceleration limit
       
       vx_samples: 12              # Reduced samples for simpler trajectories
       vy_samples: 1
@@ -407,8 +407,8 @@ velocity_smoother:
     # ✅ ULTRA CONSERVATIVE: Very slow speeds
     max_velocity: [0.8, 0.0, 0.4]    # Further reduced
     min_velocity: [-0.0, 0.0, -0.4]
-    max_accel: [0.8, 0.0, 0.8]       # Very gentle acceleration
-    max_decel: [-0.8, 0.0, -0.8]     # Very gentle deceleration
+    max_accel: [1.5, 0.0, 0.8]       # Very gentle acceleration
+    max_decel: [-1.5, 0.0, -1.5]     # Very gentle deceleration
     
     topic: "cmd_vel"
     smoothed_vel_topic: "diff_drive/cmd_vel"
