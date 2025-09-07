@@ -1,0 +1,383 @@
+<?xml version="1.0"?>
+<robot name="diff_drive">
+
+  <!-- Base Link -->
+  <link name="chassis">
+    <inertial>
+      <!-- ✅ INCREASED: More mass for stability -->
+      <mass value="5.0"/>
+      <!-- ✅ ADJUSTED: Better inertia distribution for front-wheel drive -->
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0" iyy="1.5" iyz="0.0" izz="1.8"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="2.01142 1 0.568726"/>
+      </geometry>
+      <material name="blue_material">
+        <color rgba="0.5 0.5 1.0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.01142 1 0.568726"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Left Wheel -->
+  <link name="left_wheel">
+    <inertial>
+      <!-- ✅ INCREASED: Heavier wheels for better traction -->
+      <mass value="4.0"/>
+      <inertia ixx="0.29" ixy="0.0" ixz="0.0" iyy="0.29" iyz="0.0" izz="0.25"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <cylinder length="0.05" radius="0.3"/>
+      </geometry>
+      <material name="dark_gray_material">
+        <color rgba="0.2 0.2 0.2 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.05" radius="0.3"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Right Wheel -->
+  <link name="right_wheel">
+    <inertial>
+      <!-- ✅ INCREASED: Match left wheel -->
+      <mass value="4.0"/>
+      <inertia ixx="0.29" ixy="0.0" ixz="0.0" iyy="0.29" iyz="0.0" izz="0.25"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <cylinder length="0.05" radius="0.3"/>
+      </geometry>
+      <material name="dark_gray_material"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.05" radius="0.3"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ✅ REDESIGNED: Proper Caster Wheel for Front-Wheel Drive -->
+  <link name="caster">
+    <inertial>
+      <!-- ✅ LIGHTER: Caster should be light to follow easily -->
+      <mass value="0.5"/>
+      <inertia ixx="0.02" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.02"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <sphere radius="0.2"/>
+      </geometry>
+      <material name="dark_gray_material"/>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.2"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Lidar Link -->
+  <link name="lidar_link">
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.000166667" ixy="0.0" ixz="0.0" iyy="0.000166667" iyz="0.0" izz="0.000166667"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+      <material name="gray_material">
+        <color rgba="0.7 0.7 0.7 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Depth Camera Link -->
+  <link name="depth_camera_link">
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.000083333" ixy="0.0" ixz="0.0" iyy="0.000083333" iyz="0.0" izz="0.000083333"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.05 0.15 0.05"/>
+      </geometry>
+      <material name="very_dark_gray_material">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.05 0.15 0.05"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joints -->
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="chassis"/>
+    <child link="left_wheel"/>
+    <origin xyz="0.554283 0.625029 -0.025" rpy="-1.5707 0 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- ✅ ADDED: Joint dynamics for better control -->
+    <dynamics damping="0.2" friction="0.1"/>
+  </joint>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="chassis"/>
+    <child link="right_wheel"/>
+    <origin xyz="0.554282 -0.625029 -0.025" rpy="-1.5707 0 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- ✅ ADDED: Joint dynamics for better control -->
+    <dynamics damping="0.2" friction="0.1"/>
+  </joint>
+
+  <!-- ✅ CHANGED: Caster joint with proper dynamics -->
+  <joint name="caster_wheel" type="fixed">
+    <parent link="chassis"/>
+    <child link="caster"/>
+    <origin xyz="-0.957138 0 -0.125" rpy="0 0 0"/>
+    <!-- Note: Keep as fixed since caster is a sphere that can roll freely -->
+  </joint>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 0.5" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="depth_camera_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="depth_camera_link"/>
+    <origin xyz="0.8 0 0.3" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ✅ OPTIMIZED: Gazebo Friction Properties for Front-Wheel Drive -->
+  <gazebo reference="left_wheel">
+    <mu1>3.0</mu1>                    <!-- Very high static friction for drive wheels -->
+    <mu2>2.5</mu2>                    <!-- High dynamic friction -->
+    <fdir1>1 0 0</fdir1>              <!-- Friction direction -->
+    <minDepth>0.003</minDepth>        <!-- Smaller contact depth for better response -->
+    <maxVel>0.05</maxVel>             <!-- Lower correction velocity -->
+    <kp>10000.0</kp>                  <!-- Contact stiffness -->
+    <kd>1.0</kd>                      <!-- Contact damping -->
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="right_wheel">
+    <mu1>3.0</mu1>                    <!-- Match left wheel -->
+    <mu2>2.5</mu2>
+    <fdir1>1 0 0</fdir1>
+    <minDepth>0.003</minDepth>
+    <maxVel>0.05</maxVel>
+    <kp>10000.0</kp>
+    <kd>1.0</kd>
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <!-- ✅ CRITICAL: Proper caster wheel physics -->
+  <gazebo reference="caster">
+    <mu1>0.1</mu1>                    <!-- ZERO friction - let it slide freely -->
+    <mu2>0.05</mu2>                    <!-- ZERO friction in all directions -->
+    <fdir1>0 0 0</fdir1>              <!-- No preferred friction direction -->
+    <minDepth>0.005</minDepth>
+    <maxVel>0.1</maxVel>
+    <kp>1000.0</kp>                   <!-- Lower stiffness for smooth rolling -->
+    <kd>10.0</kd>                     <!-- Higher damping to prevent bouncing -->
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+  <!-- ✅ ENHANCED: Gazebo Differential Drive Plugin with Anti-Drift Settings -->
+  <gazebo>
+    <plugin filename="libgz-sim-diff-drive-system.so" name="gz::sim::systems::DiffDrive">
+      <!-- Joint configuration -->
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+            <!-- In diff_drive plugin -->
+      <wheel_slip_compliance_lateral>0.01</wheel_slip_compliance_lateral>
+      <wheel_slip_compliance_longitudinal>0.01</wheel_slip_compliance_longitudinal>
+      <!-- ✅ ACCURATE: Physical parameters -->
+      <wheel_separation>1.25</wheel_separation>
+      <wheel_radius>0.3</wheel_radius>
+      
+      <!-- ✅ ULTRA HIGH: Odometry frequency for precise tracking -->
+      <odom_publish_frequency>500</odom_publish_frequency>
+      
+      <!-- Topic configuration -->
+      <topic>cmd_vel</topic>
+      <odom_topic>diff_drive/odom</odom_topic>
+      
+      <!-- Frame configuration -->
+      <frame_id>diff_drive/odom</frame_id>
+      <child_frame_id>diff_drive/chassis</child_frame_id>
+      
+      <!-- ✅ CONSERVATIVE: Reduced acceleration limits -->
+      <max_linear_acceleration>2.0</max_linear_acceleration>
+      <min_linear_acceleration>-2.0</min_linear_acceleration>
+      <max_angular_acceleration>2.0</max_angular_acceleration>
+      <min_angular_acceleration>-2.0</min_angular_acceleration>
+      
+      <!-- ✅ REDUCED: Lower velocity limits -->
+      <max_linear_velocity>0.8</max_linear_velocity>
+      <min_linear_velocity>-0.1</min_linear_velocity>
+      <max_angular_velocity>0.2</max_angular_velocity>
+      <min_angular_velocity>-0.2</min_angular_velocity>
+      
+      <!-- TF publishing -->
+      <publish_odom_tf>true</publish_odom_tf>
+      
+      <!-- ✅ ANTI-SLIP: Wheel slip prevention -->
+      <wheel_slip_compliance_lateral>0</wheel_slip_compliance_lateral>
+      <wheel_slip_compliance_longitudinal>0</wheel_slip_compliance_longitudinal>
+      
+    </plugin>
+    
+    <!-- ✅ ADDED: Physics settings for stable simulation -->
+    <physics name="default_physics" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000.0</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>150</iters>
+          <sor>1.400000</sor>
+        </solver>
+        <constraints>
+          <cfm>0.000001</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>2000.000000</contact_max_correcting_vel>
+          <contact_surface_layer>0.01000</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+    
+    <!-- Lidar Sensor -->
+    <gazebo reference="lidar_link">
+      <sensor type="gpu_ray" name="gpu_lidar">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>true</visualize>
+        <update_rate>10</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>640</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.141593</min_angle>
+              <max_angle>3.141593</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0.0</min_angle>
+              <max_angle>0.0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.08</min>
+            <max>10.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+        <plugin filename="libgazebo_ros_gpu_lidar.so" name="gazebo_ros_gpu_lidar">
+          <topicName>scan</topicName>
+          <frameName>lidar_link</frameName>
+        </plugin>
+      </sensor>
+    </gazebo>
+
+    <!-- RGB Camera -->
+    <gazebo reference="depth_camera_link">
+      <sensor type="camera" name="rgb_camera">
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>30</update_rate>
+        <camera>
+          <horizontal_fov>1.047198</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <visualize>true</visualize>
+        <plugin filename="libgazebo_ros_camera.so" name="camera_controller">
+          <camera_name>rgb_camera</camera_name>
+          <frame_name>depth_camera_link</frame_name>
+          <hack_baseline>0.07</hack_baseline>
+        </plugin>
+      </sensor>
+
+      <!-- Depth Camera -->
+      <sensor type="depth" name="depth_camera">
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>30</update_rate>
+        <camera>
+          <horizontal_fov>1.047198</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <plugin filename="libgazebo_ros_depth_camera.so" name="depth_camera_controller">
+          <camera_name>depth_camera</camera_name>
+          <frame_name>depth_camera_link</frame_name>
+          <hack_baseline>0.07</hack_baseline>
+        </plugin>
+      </sensor>
+
+      <!-- RGBD Camera -->
+      <sensor type="rgbd" name="rgbd_camera">
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>30</update_rate>
+        <camera>
+          <horizontal_fov>1.047198</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <plugin filename="libgazebo_ros_openni_kinect.so" name="rgbd_camera_controller">
+          <camera_name>rgbd_camera</camera_name>
+          <frame_name>depth_camera_link</frame_name>
+          <baseline>0.1</baseline>
+          <pointCloudCutoff>0.5</pointCloudCutoff>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </gazebo>
+
+</robot>

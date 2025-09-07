@@ -1,0 +1,597 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="diff_drive_world">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    
+    <!-- Gazebo plugins -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+    </plugin>
+    
+    <!-- Gravity -->
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    
+    <!-- Atmosphere -->
+    <atmosphere type='adiabatic'/>
+    
+    <!-- Scene -->
+    <scene>
+      <grid>true</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>1</shadows>
+    </scene>
+    
+    <!-- Lighting -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+    
+    <!-- Ground -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>100</mu>
+                <mu2>50</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>200 200</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <!-- Two Room House Structure - WITH OPEN DOORWAY -->
+    <model name="house">
+      <pose>0 0 0 0 0 0</pose>
+      <static>true</static>
+      
+      <!-- Extended Floor for two rooms -->
+      <link name="floor">
+        <pose>0 0 0.05 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>32 16 0.1</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>32 16 0.1</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.3 0.2 1</ambient>
+            <diffuse>0.5 0.3 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- External Walls -->
+      <!-- Front wall -->
+      <link name="wall_front">
+        <pose>0 -8 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>32.2 0.2 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>32.2 0.2 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- Back wall -->
+      <link name="wall_back">
+        <pose>0 8 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>32.2 0.2 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>32.2 0.2 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- Left wall -->
+      <link name="wall_left">
+        <pose>-16 0 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 16 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 16 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- Right wall -->
+      <link name="wall_right">
+        <pose>16 0 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 16 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 16 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- MODIFIED: Dividing wall with larger open doorway -->
+      <!-- Upper part of dividing wall (above doorway) - made smaller -->
+      <link name="dividing_wall_upper">
+        <pose>0 5.5 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 5 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 5 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.7 1</ambient>
+            <diffuse>0.9 0.9 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- Lower part of dividing wall (below doorway) - made smaller -->
+      <link name="dividing_wall_lower">
+        <pose>0 -5.5 1.5 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 5 3</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 5 3</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.7 1</ambient>
+            <diffuse>0.9 0.9 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      
+      <!-- REMOVED: Doorway header to create completely open passage -->
+      <!-- The space from y=-3 to y=3 (6 units wide) is now completely open -->
+      
+    </model>
+    
+    <!-- Room 1 Furniture (Left Room) - LARGER OBJECTS - POSITIONS ADJUSTED -->
+    <!-- Living room setup -->
+    <model name="sofa">
+      <pose>-10 4 0.5 0 0 1.57</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>3.5 1.5 1</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>3.5 1.5 1</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.2 0.8 1</ambient>
+            <diffuse>0.2 0.2 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="coffee_table">
+      <pose>-7 4 0.3 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>2 1.2 0.6</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>2 1.2 0.6</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4 0.2 0.1 1</ambient>
+            <diffuse>0.4 0.2 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="tv_stand">
+      <pose>-13 -5 0.4 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>2.5 0.8 0.8</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>2.5 0.8 0.8</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.3 0.3 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="armchair">
+      <pose>-4 -5 0.4 0 0 0.5</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.5 1.5 0.8</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.5 1.5 0.8</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.5 0.3 1</ambient>
+            <diffuse>0.7 0.5 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <!-- Room 2 Furniture (Right Room) - ENLARGED OBJECTS -->
+    <!-- Dining/Office room setup -->
+    <model name="dining_table">
+      <pose>9 -3 0.8 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>4.5 3.0 1.6</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>4.5 3.0 1.6</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4 0.2 0.1 1</ambient>
+            <diffuse>0.4 0.2 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="chair1">
+      <pose>6 -2 0.6 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.1 1</ambient>
+            <diffuse>0.6 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="chair2">
+      <pose>12 -2 0.6 0 0 3.14</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.1 1</ambient>
+            <diffuse>0.6 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="chair3">
+      <pose>9 -0.6 0.6 0 0 1.57</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.1 1</ambient>
+            <diffuse>0.6 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="chair4">
+      <pose>9 -5.4 0.6 0 0 -1.57</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 1.2 1.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.1 1</ambient>
+            <diffuse>0.6 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="bookshelf">
+      <pose>13 5 1.5 0 0 1.57</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>3.8 1.0 3.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>3.8 1.0 3.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.3 0.1 1</ambient>
+            <diffuse>0.6 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="desk">
+      <pose>9 6 0.8 0 0 3.14</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>3.8 2.0 1.6</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>3.8 2.0 1.6</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4 0.2 0.1 1</ambient>
+            <diffuse>0.4 0.2 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    
+    <model name="cabinet">
+      <pose>4 5 0.9 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>2.2 1.5 1.8</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>2.2 1.5 1.8</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Robot spawn position -->
+    <model name="diff_drive">
+      <self_collide>true</self_collide>
+      <pose>0 0 0.35 0 0 0</pose>
+      <include merge="true">
+        <uri>package://robot_nav_description/models/diff_drive</uri>
+      </include>
+
+      <plugin
+        filename="gz-sim-joint-state-publisher-system"
+        name="gz::sim::systems::JointStatePublisher">
+      </plugin>
+
+      <plugin
+        filename="gz-sim-pose-publisher-system"
+        name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>true</publish_link_pose>
+        <use_pose_vector_msg>true</use_pose_vector_msg>
+        <static_publisher>true</static_publisher>
+        <static_update_frequency>1</static_update_frequency>
+      </plugin>
+
+      <plugin
+        filename="gz-sim-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <odom_frame>diff_drive/odom</odom_frame>
+        <robot_base_frame>diff_drive</robot_base_frame>
+      </plugin>
+    </model>
+
+  </world>
+</sdf>
