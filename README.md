@@ -173,5 +173,4 @@ We can run this docking server externally using
 ros2 run robot_nav_bringup docking_server.py
 ```
 This file is alredy included in `navigation.launch.py` so we don't have to run it externally
-
 You can change position of dock in `nav2_params.yaml` in docking_pose perameter
