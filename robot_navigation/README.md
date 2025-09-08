@@ -153,7 +153,7 @@ This project uses **sensor fusion** for obstacle detection and avoidance:
 ---
 
 ## ⚓ Service-Based Docking  
-![](https://github.com/Divya777777/2d_map_to_gazebo_world/blob/humble/Gifs/2d_to_world.gif)
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Docking.gif)
 
 This project also includes a **custom ROS 2 service** to trigger **auto-docking** of the robot.  
 Instead of publishing goals manually in RViz, a service call can be used to send the robot to a predefined **docking station pose**.  
