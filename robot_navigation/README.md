@@ -120,9 +120,89 @@ This project uses **sensor fusion** for obstacle detection and avoidance:
 3. **Voxel Layer**
    * 3D representation of the environment is maintained using `z_resolution`, `z_voxels`.
    * `marking` and `clearing` ensure dynamic obstacles are updated live.
+  
+---
+
+## 🔍 Point Cloud Filtering
+
+The project includes a **Point Cloud Filter node** that processes raw depth camera data to improve navigation performance and reliability.
+
+
+
+### `pointcloud_filter.py`
+- **Input**: Subscribes to the raw point cloud from the depth camera (`/diff_drive/rgbd/points`)  
+- **Output**: Publishes a cleaned, filtered version (`/filtered_points`) used by the navigation stack  
 
 ---
 
+### How It Works
+
+#### ✅ Data Validation
+- Removes invalid points (NaN, infinite values)  
+- Filters out points beyond useful range (**0.1m – 5.0m**)  
+- Ensures only reliable depth data reaches the navigation system  
+
+#### 📦 Voxel Grid Filtering
+- Downsamples the point cloud using a voxel grid approach  
+- **Voxel size**: `0.08m` → balances detail with performance  
+- Reduces computational load while preserving obstacle information  
+
+#### ⚡ Performance Optimization
+- Significantly reduces point cloud density for faster processing  
+- Maintains obstacle detection accuracy for navigation  
+- Throttled error logging to prevent spam  
+
+---
+
+### 🧭 Integration with Navigation
+
+The filtered point cloud (`/filtered_points`) is integrated into **Nav2's costmap system** through the **VoxelLayer plugin**, enabling:
+
+- **3D Obstacle Detection** – detects obstacles at different heights that 2D Lidar might miss  
+- **Dynamic Updates** – real-time obstacle marking and clearing  
+- **Sensor Fusion** – combines with Lidar data for comprehensive environmental awareness  
+
+---
+
+### 🚀 Usage
+
+The filter runs automatically when navigation is launched. You can monitor its performance:
+
+```bash
+# Check filtered point cloud topic
+ros2 topic info /filtered_points
+
+# Monitor filtering statistics
+ros2 topic echo /rosout | grep pointcloud_filter
+```
+---
+
+
+## ⚓ Service-Based Docking  
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Docking_demo.gif)
+
+This project also includes a **custom ROS 2 service** to trigger **auto-docking** of the robot.  
+Instead of publishing goals manually in RViz, a service call can be used to send the robot to a predefined **docking station pose**.  
+
+### How It Works
+1. A service (e.g., `DockRobot`) is created using `rclpy`.  
+2. When the service is called, the node publishes a `NavigateToPose` goal to the Nav2 stack.  
+3. The goal corresponds to the docking station’s saved coordinates (`x`, `y`, `yaw`) on the map.  
+4. Nav2 plans and executes the path automatically.  
+
+### Example Service Call
+```bash
+ros2 service call /request_dock robot_nav_bringup/srv/RequestDock
+```
+We can run this docking server externally using 
+```bash
+ros2 run robot_nav_bringup docking_server.py
+```
+This file is alredy included in `navigation.launch.py` so we don't have to run it externally.
+
+You can change position of dock in `nav2_params.yaml` in docking_pose perameter.
+
+---
 ## 📍 Config Files Explained
 
 
@@ -150,30 +230,7 @@ This project uses **sensor fusion** for obstacle detection and avoidance:
   * Displays for Map, LaserScan, RobotModel, etc
   * Helpful for monitoring SLAM and navigation
 
----
 
-## ⚓ Service-Based Docking  
-![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Docking_demo.gif)
 
-This project also includes a **custom ROS 2 service** to trigger **auto-docking** of the robot.  
-Instead of publishing goals manually in RViz, a service call can be used to send the robot to a predefined **docking station pose**.  
-
-### How It Works
-1. A service (e.g., `DockRobot`) is created using `rclpy`.  
-2. When the service is called, the node publishes a `NavigateToPose` goal to the Nav2 stack.  
-3. The goal corresponds to the docking station’s saved coordinates (`x`, `y`, `yaw`) on the map.  
-4. Nav2 plans and executes the path automatically.  
-
-### Example Service Call
-```bash
-ros2 service call /request_dock robot_nav_bringup/srv/RequestDock
-```
-We can run this docking server externally using 
-```bash
-ros2 run robot_nav_bringup docking_server.py
-```
-This file is alredy included in `navigation.launch.py` so we don't have to run it externally
-
-You can change position of dock in `nav2_params.yaml` in docking_pose perameter
 ##
 ### We can improve navigation by tuning `nav2_params.yaml` parameters as per requirements
