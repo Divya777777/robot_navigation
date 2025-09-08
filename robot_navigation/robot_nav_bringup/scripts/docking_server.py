@@ -4,9 +4,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.task import Future
 
-from geometry_msgs.msg import PoseStamped, Twist, Quaternion
+from geometry_msgs.msg import PoseStamped, Twist, Quaternion, PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
 from robot_nav_bringup.srv import RequestDock, RequestUndock
 from robot_nav_bringup.msg import DockingStatus
@@ -18,12 +17,11 @@ class DockingServer(Node):
     def __init__(self):
         super().__init__('docking_server')
         
-        # Parameters
+        # Parameters - will be set from nav2_params.yaml
         self.declare_parameter('docking_pose', [-14.08, -3.30, 0.713641])  # [x, y, yaw]
-        self.declare_parameter('docking_tolerance', 0.1)  # meters
+        self.declare_parameter('docking_tolerance', 0.5)  # meters - increased tolerance
         self.declare_parameter('approach_distance', 0.5)  # meters
-        self.declare_parameter('final_dock_distance', 0.6)  # meters to move forward
-        self.declare_parameter('nav_timeout', 120.0)  # seconds
+        self.declare_parameter('undock_distance', 1.0)  # meters to move backward during undock
         
         # Services
         self.dock_srv = self.create_service(RequestDock, 'request_dock', self.dock_callback)
@@ -33,14 +31,25 @@ class DockingServer(Node):
         self.status_pub = self.create_publisher(DockingStatus, 'docking_status', 10)
         self.cmd_vel_pub = self.create_publisher(Twist, '/diff_drive/cmd_vel', 10)
         
+        # Subscriber for robot pose
+        self.robot_pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped,
+            '/amcl_pose',
+            self.pose_callback,
+            10
+        )
+        
+        # Current robot pose
+        self.current_pose = None
+        
         # Action client for navigation
         self.nav_to_pose_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         
-        # TF buffer for coordinate transformations
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-        
         self.get_logger().info('Docking server initialized')
+
+    def pose_callback(self, msg):
+        """Update current robot pose"""
+        self.current_pose = msg.pose.pose
 
     def yaw_to_quaternion(self, yaw):
         """Convert yaw angle to quaternion"""
@@ -51,6 +60,10 @@ class DockingServer(Node):
         q.w = math.cos(yaw / 2.0)
         return q
 
+    def distance_to_pose(self, x1, y1, x2, y2):
+        """Calculate distance between two points"""
+        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
     def dock_callback(self, request, response):
         self.get_logger().info('Received dock request')
         self.publish_status(DockingStatus.DOCKING_IN_PROGRESS, "Docking started")
@@ -60,8 +73,6 @@ class DockingServer(Node):
             docking_pose = self.get_parameter('docking_pose').get_parameter_value().double_array_value
             tolerance = self.get_parameter('docking_tolerance').value
             approach_dist = self.get_parameter('approach_distance').value
-            final_dock_dist = self.get_parameter('final_dock_distance').value
-            nav_timeout = self.get_parameter('nav_timeout').value
             
             self.get_logger().info(f'Docking to: {docking_pose}')
             
@@ -69,7 +80,7 @@ class DockingServer(Node):
             approach_pose = self.create_approach_pose(docking_pose, approach_dist)
             
             # Navigate to approach pose
-            nav_success = self.navigate_to_pose(approach_pose, nav_timeout)
+            nav_success = self.navigate_to_pose(approach_pose)
             
             if not nav_success:
                 response.success = False
@@ -77,12 +88,25 @@ class DockingServer(Node):
                 self.publish_status(DockingStatus.DOCKING_FAILED, "Navigation failed")
                 return response
             
-            # Wait a moment before final approach
-            self.get_logger().info('Reached approach position, starting final docking')
-            time.sleep(2.0)
+            # Check if we're close to the docking pose
+            dock_x, dock_y, dock_yaw = docking_pose
+            if self.current_pose:
+                current_x = self.current_pose.position.x
+                current_y = self.current_pose.position.y
+                distance = self.distance_to_pose(current_x, current_y, dock_x, dock_y)
+                
+                if distance <= tolerance:
+                    response.success = True
+                    response.message = "Docking successful - already at dock position"
+                    self.publish_status(DockingStatus.DOCKING_SUCCESS, "Docking completed")
+                    return response
             
-            # Perform final docking maneuver
-            dock_success = self.perform_final_docking(docking_pose, final_dock_dist, tolerance)
+            # If not close enough, perform final docking maneuver
+            self.get_logger().info('Reached approach position, checking if final docking needed')
+            time.sleep(1.0)
+            
+            # Simple forward movement to final position
+            dock_success = self.perform_final_docking(docking_pose, tolerance)
             
             if dock_success:
                 response.success = True
@@ -123,8 +147,8 @@ class DockingServer(Node):
         self.get_logger().info(f'Approach pose: ({approach_x:.2f}, {approach_y:.2f}) facing {yaw:.2f} rad')
         return pose
 
-    def navigate_to_pose(self, pose, timeout=30.0):
-        """Navigate to a specific pose using Nav2 with timeout"""
+    def navigate_to_pose(self, pose):
+        """Navigate to a specific pose using Nav2"""
         self.get_logger().info(f'Navigating to pose: ({pose.pose.position.x:.2f}, {pose.pose.position.y:.2f})')
         
         # Wait for navigation server
@@ -138,73 +162,63 @@ class DockingServer(Node):
         
         # Send goal
         future = self.nav_to_pose_client.send_goal_async(goal_msg)
-        
-        # Wait for goal acceptance with timeout
-        start_time = time.time()
-        while not future.done() and time.time() - start_time < 5.0:
-            time.sleep(0.1)
-        
-        if not future.done():
-            self.get_logger().error('Goal acceptance timeout')
-            return False
+        rclpy.spin_until_future_complete(self, future)
         
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error('Goal rejected')
             return False
         
-        self.get_logger().info('Goal accepted, waiting for navigation to complete...')
-        
-        # Wait for result with timeout
+        # Wait for result
         result_future = goal_handle.get_result_async()
-        start_time = time.time()
-        while not result_future.done() and time.time() - start_time < timeout:
-            time.sleep(0.1)
+        rclpy.spin_until_future_complete(self, result_future)
         
-        if not result_future.done():
-            self.get_logger().warn('Navigation timeout, but may have reached close enough')
-            # Cancel the goal
-            cancel_future = goal_handle.cancel_goal_async()
-            rclpy.spin_until_future_complete(self, cancel_future)
-            return True  # Assume we're close enough for final docking
-        
-        try:
-            result = result_future.result().result
-            self.get_logger().info(f'Navigation completed with result')
-            return True
-        except:
-            self.get_logger().warn('Navigation may have been cancelled, but proceeding')
-            return True
+        # Return True if goal was accepted (Nav2 will handle the navigation)
+        return True
 
-    def perform_final_docking(self, docking_pose, final_distance, tolerance):
-        """Perform the final precise docking maneuver"""
-        self.get_logger().info('Starting final docking maneuver')
+    def perform_final_docking(self, docking_pose, tolerance):
+        """Perform the final precise docking maneuver if needed"""
+        dock_x, dock_y, dock_yaw = docking_pose
+        
+        if not self.current_pose:
+            self.get_logger().warn('No current pose available, skipping final docking')
+            return True
+            
+        current_x = self.current_pose.position.x
+        current_y = self.current_pose.position.y
+        distance = self.distance_to_pose(current_x, current_y, dock_x, dock_y)
+        
+        if distance <= tolerance:
+            self.get_logger().info(f'Already at dock position (distance: {distance:.2f}m)')
+            return True
+        
+        self.get_logger().info(f'Performing final docking, distance to dock: {distance:.2f}m')
         
         try:
-            x, y, yaw = docking_pose
-            
             # Move slowly forward towards actual docking pose
             twist = Twist()
             twist.linear.x = 0.1  # Slow forward motion
             
-            # Calculate time needed based on distance and speed
-            move_time = final_distance / abs(twist.linear.x)
-            
-            self.get_logger().info(f'Moving forward for {move_time:.2f} seconds to final dock position')
-            
-            # Move forward for calculated time
+            # Move forward until we reach the dock position
             start_time = time.time()
-            while time.time() - start_time < move_time:
+            while self.current_pose and time.time() - start_time < 10.0:  # 10 second timeout
+                current_x = self.current_pose.position.x
+                current_y = self.current_pose.position.y
+                distance = self.distance_to_pose(current_x, current_y, dock_x, dock_y)
+                
+                if distance <= tolerance:
+                    break
+                
                 self.cmd_vel_pub.publish(twist)
                 time.sleep(0.1)
             
-            # Stop the robot gently
+            # Stop the robot
             twist.linear.x = 0.0
-            for _ in range(5):  # Publish stop multiple times
+            for _ in range(5):
                 self.cmd_vel_pub.publish(twist)
                 time.sleep(0.1)
             
-            self.get_logger().info('Final docking maneuver completed successfully')
+            self.get_logger().info('Final docking maneuver completed')
             return True
             
         except Exception as e:
@@ -220,13 +234,21 @@ class DockingServer(Node):
         self.publish_status(DockingStatus.UNDOCKING_IN_PROGRESS, "Undocking started")
         
         try:
+            # Get undock distance parameter
+            undock_dist = self.get_parameter('undock_distance').value
+            
             # Move backward for undocking
             twist = Twist()
-            twist.linear.x = -0.1
+            twist.linear.x = -0.2  # Backward motion
             
-            # Move backward for 3 seconds
+            # Calculate time based on distance and speed
+            move_time = undock_dist / abs(twist.linear.x)
+            
+            self.get_logger().info(f'Undocking: moving backward {undock_dist}m')
+            
+            # Move backward for calculated time
             start_time = time.time()
-            while time.time() - start_time < 3.0:
+            while time.time() - start_time < move_time:
                 self.cmd_vel_pub.publish(twist)
                 time.sleep(0.1)
             

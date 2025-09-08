@@ -74,8 +74,9 @@ def generate_launch_description():
         executable='docking_server.py',
         name='docking_server',
         output='screen',
-        parameters=[{'use_sim_time': True}]
-    )
+        parameters=[{'use_sim_time': True},
+                    os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml')]
+    )    
     # Bridge ROS topics and Gazebo messages for establishing communication
     # Bridge ROS topics and Gazebo messages for establishing communication
     bridge = Node(

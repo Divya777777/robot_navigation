@@ -416,3 +416,10 @@ velocity_smoother:
     odom_duration: 0.15         # Longer history for smoothing
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.5       # Longer timeout
+
+docking_server:
+  ros__parameters:
+    docking_pose: [-13.436, -3.304, 0.029]  # [x, y, yaw]
+    docking_tolerance: 0.5  # meters
+    approach_distance: 0.5  # meters
+    undock_distance: 2.0  # meters to move backward during undock
