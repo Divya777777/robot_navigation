@@ -41,7 +41,7 @@
     ```
 
 ## 🗺️ Map Generation Workflow
-![](https://github.com/Divya777777/2d_map_to_gazebo_world/blob/humble/Gifs/2d_to_world.gif)
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Map_generate.gif)
 
 Generate the map with:
 
@@ -71,7 +71,7 @@ ros2 run nav2_map_server map_saver_cli -f your/robot_nav_bringup/maps/map_name
 ---
 
 ## 🚀 Navigation Workflow
-![](https://github.com/Divya777777/2d_map_to_gazebo_world/blob/humble/Gifs/2d_to_world.gif)
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Nevigation.gif)
 
 Once a map has been generated and saved, start navigation with:
 
@@ -94,7 +94,7 @@ Use RViz2’s **2D Goal Pose** tool to send navigation goals.
 ---
 
 ## 🛑 Obstacle Avoidance (Depth Camera + Lidar Fusion)
-![](https://github.com/Divya777777/2d_map_to_gazebo_world/blob/humble/Gifs/2d_to_world.gif)
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Obstacle_avoidance.gif)
 
 This project uses **sensor fusion** for obstacle detection and avoidance:
 
