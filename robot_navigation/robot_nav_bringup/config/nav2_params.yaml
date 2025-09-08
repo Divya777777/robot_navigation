@@ -144,7 +144,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.5          # Slightly more tolerant
-      yaw_goal_tolerance: 0.6         # More tolerant for orientation
+      yaw_goal_tolerance: 2.0         # More tolerant for orientation
 
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"

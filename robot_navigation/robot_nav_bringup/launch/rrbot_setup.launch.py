@@ -69,7 +69,13 @@ def generate_launch_description():
        arguments=['-d', os.path.join(pkg_project_bringup, 'config', 'basic_nav.rviz')],
        condition=IfCondition(LaunchConfiguration('rviz'))
     )
-
+    docking_server = Node(
+        package='robot_nav_bringup',
+        executable='docking_server.py',
+        name='docking_server',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+    )
     # Bridge ROS topics and Gazebo messages for establishing communication
     # Bridge ROS topics and Gazebo messages for establishing communication
     bridge = Node(
@@ -122,7 +128,7 @@ def generate_launch_description():
             '/bringup_launch.py'
         ]),
         launch_arguments={
-            'map': os.path.join(pkg_project_bringup, 'maps', 'room1.yaml'),
+            'map': os.path.join(pkg_project_bringup, 'maps', 'room2.yaml'),
             'use_sim_time': 'True',
             'params_file': os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml')
         }.items(),
@@ -189,7 +195,7 @@ def generate_launch_description():
                               description='Launch only localization (deprecated - use navigation instead).'),
         DeclareLaunchArgument('navigation', default_value='true',
                               description='Launch full navigation stack (includes localization).'),
-        
+        docking_server,
         # Core nodes
         base_footprint_tf,
         cmd_vel_relay,

@@ -19,7 +19,7 @@ class DockingServer(Node):
         super().__init__('docking_server')
         
         # Parameters
-        self.declare_parameter('docking_pose', [1.0, 1.0, 0.0])  # [x, y, yaw]
+        self.declare_parameter('docking_pose', [-14.08, -3.30, 0.713641])  # [x, y, yaw]
         self.declare_parameter('docking_tolerance', 0.1)  # meters
         self.declare_parameter('approach_distance', 0.5)  # meters
         self.declare_parameter('final_dock_distance', 0.6)  # meters to move forward
