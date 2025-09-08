@@ -153,7 +153,7 @@ This project uses **sensor fusion** for obstacle detection and avoidance:
 ---
 
 ## ⚓ Service-Based Docking  
-![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Docking.gif)
+![](https://github.com/Divya777777/robot_navigation/blob/main/GIFs/Docking_demo.gif)
 
 This project also includes a **custom ROS 2 service** to trigger **auto-docking** of the robot.  
 Instead of publishing goals manually in RViz, a service call can be used to send the robot to a predefined **docking station pose**.  
@@ -175,3 +175,5 @@ ros2 run robot_nav_bringup docking_server.py
 This file is alredy included in `navigation.launch.py` so we don't have to run it externally
 
 You can change position of dock in `nav2_params.yaml` in docking_pose perameter
+##
+### We can improve navigation by tuning `nav2_params.yaml` parameters as per requirements
