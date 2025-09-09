@@ -46,6 +46,7 @@ install(PROGRAMS
   scripts/obstacle_safety_node.py
   scripts/docking_server.py
   scripts/test_docking_client.py
+  scripts/slip_detector.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -70,7 +70,7 @@
   <link name="caster">
     <inertial>
       <!-- ✅ LIGHTER: Caster should be light to follow easily -->
-      <mass value="0.5"/>
+      <mass value="2.0"/>
       <inertia ixx="0.02" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.02"/>
     </inertial>
     <visual>
@@ -128,6 +128,12 @@
     </collision>
   </link>
 
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" ixy="0.0" ixz="0.0" iyy="1e-6" iyz="0.0" izz="1e-6"/>
+    </inertial>
+  </link>
   <!-- Joints -->
   <joint name="left_wheel_joint" type="continuous">
     <parent link="chassis"/>
@@ -135,7 +141,7 @@
     <origin xyz="0.554283 0.625029 -0.025" rpy="-1.5707 0 0"/>
     <axis xyz="0 0 1"/>
     <!-- ✅ ADDED: Joint dynamics for better control -->
-    <dynamics damping="0.2" friction="0.1"/>
+    <dynamics damping="0.2" friction="1.0"/>
   </joint>
 
   <joint name="right_wheel_joint" type="continuous">
@@ -144,7 +150,7 @@
     <origin xyz="0.554282 -0.625029 -0.025" rpy="-1.5707 0 0"/>
     <axis xyz="0 0 1"/>
     <!-- ✅ ADDED: Joint dynamics for better control -->
-    <dynamics damping="0.2" friction="0.1"/>
+    <dynamics damping="0.2" friction="1.0"/>
   </joint>
 
   <!-- ✅ CHANGED: Caster joint with proper dynamics -->
@@ -166,7 +172,36 @@
     <child link="depth_camera_link"/>
     <origin xyz="0.8 0 0.3" rpy="0 0 0"/>
   </joint>
+<!-- Add this to your URDF -->
 
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.2" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Add IMU plugin -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>100</update_rate>
+      <visualize>true</visualize>
+      <topic>__default_topic__</topic>
+      <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+        <ros>
+          <namespace>/diff_drive</namespace>
+          <remapping>~/out:=imu</remapping>
+        </ros>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+        <frame_name>diff_drive/imu_link</frame_name>
+        <!-- Add noise for realistic simulation -->
+        <angular_velocity_stddev>0.02</angular_velocity_stddev>
+        <linear_acceleration_stddev>0.1</linear_acceleration_stddev>
+        <orientation_stddev>0.01</orientation_stddev>
+      </plugin>
+    </sensor>
+  </gazebo>
   <!-- ROS2 Control -->
   <ros2_control name="diff_drive_controller" type="system">
     <hardware>
@@ -197,8 +232,7 @@
     <fdir1>1 0 0</fdir1>              <!-- Friction direction -->
     <minDepth>0.003</minDepth>        <!-- Smaller contact depth for better response -->
     <maxVel>0.05</maxVel>             <!-- Lower correction velocity -->
-    <kp>10000.0</kp>                  <!-- Contact stiffness -->
-    <kd>1.0</kd>                      <!-- Contact damping -->
+                   <!-- Contact damping -->
     <material>Gazebo/DarkGrey</material>
   </gazebo>
 
@@ -208,8 +242,7 @@
     <fdir1>1 0 0</fdir1>
     <minDepth>0.003</minDepth>
     <maxVel>0.05</maxVel>
-    <kp>10000.0</kp>
-    <kd>1.0</kd>
+   
     <material>Gazebo/DarkGrey</material>
   </gazebo>
 
@@ -220,8 +253,7 @@
     <fdir1>0 0 0</fdir1>              <!-- No preferred friction direction -->
     <minDepth>0.005</minDepth>
     <maxVel>0.1</maxVel>
-    <kp>1000.0</kp>                   <!-- Lower stiffness for smooth rolling -->
-    <kd>10.0</kd>                     <!-- Higher damping to prevent bouncing -->
+                <!-- Higher damping to prevent bouncing -->
     <material>Gazebo/Grey</material>
   </gazebo>
 
@@ -232,25 +264,26 @@
     </plugin>
     
     <!-- ✅ ADDED: Physics settings for stable simulation -->
-    <physics name="default_physics" default="0" type="ode">
-      <max_step_size>0.001</max_step_size>
-      <real_time_factor>1.0</real_time_factor>
-      <real_time_update_rate>1000.0</real_time_update_rate>
-      <ode>
-        <solver>
-          <type>quick</type>
-          <iters>150</iters>
-          <sor>1.400000</sor>
-        </solver>
-        <constraints>
-          <cfm>0.000001</cfm>
-          <erp>0.2</erp>
-          <contact_max_correcting_vel>2000.000000</contact_max_correcting_vel>
-          <contact_surface_layer>0.01000</contact_surface_layer>
-        </constraints>
-      </ode>
-    </physics>
-    
+    <gazebo>
+      <physics name="default_physics" default="0" type="ode">
+        <max_step_size>0.002</max_step_size>       <!-- Smaller time step for stability -->
+        <real_time_factor>1.0</real_time_factor>
+        <real_time_update_rate>500.0</real_time_update_rate>  <!-- Match step size -->
+        <ode>
+          <solver>
+            <type>world</type>                      <!-- More stable than 'quick' -->
+            <iters>20</iters>                       <!-- Reduced iterations -->
+            <sor>1.3</sor>
+          </solver>
+          <constraints>
+            <cfm>1e-6</cfm>                        <!-- Constraint force mixing -->
+            <erp>0.2</erp>                         <!-- Error reduction parameter -->
+            <contact_max_correcting_vel>10.0</contact_max_correcting_vel>  <!-- Reduced -->
+            <contact_surface_layer>0.001</contact_surface_layer>           <!-- Reduced -->
+          </constraints>
+        </ode>
+      </physics>
+    </gazebo>
     <!-- Lidar Sensor -->
     <gazebo reference="lidar_link">
       <sensor type="gpu_ray" name="gpu_lidar">
@@ -328,7 +361,7 @@
           </clip>
         </camera>
         <always_on>1</always_on>
-        <visualize>false</visualize>
+        <visualize>true</visualize>
         <plugin filename="libgazebo_ros_depth_camera.so" name="depth_camera_controller">
           <camera_name>depth_camera</camera_name>
           <frame_name>depth_camera_link</frame_name>
@@ -353,7 +386,7 @@
           </clip>
         </camera>
         <always_on>1</always_on>
-        <visualize>false</visualize>
+        <visualize>true</visualize>
         <plugin filename="libgazebo_ros_openni_kinect.so" name="rgbd_camera_controller">
           <camera_name>rgbd_camera</camera_name>
           <frame_name>depth_camera_link</frame_name>

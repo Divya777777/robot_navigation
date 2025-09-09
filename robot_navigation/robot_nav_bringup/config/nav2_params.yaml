@@ -1,12 +1,15 @@
+# Updated navigation parameters that work with robot_localization EKF
+
 amcl:
   ros__parameters:
     use_sim_time: True
-    # ✅ HEAVILY INCREASED: Motion model noise to account for wheel slip
-    alpha1: 0.15
-    alpha2: 0.10
-    alpha3: 0.08
-    alpha4: 0.08
-    alpha5: 0.05 
+    
+    # ✅ CRITICAL: With IMU fusion, we can reduce AMCL's motion model noise
+    alpha1: 0.05    # Much lower - IMU handles rotation noise
+    alpha2: 0.1     # Lower - better odometry with IMU
+    alpha3: 0.08    # Moderate translation noise
+    alpha4: 0.03    # Lower - IMU provides better rotation estimates
+    alpha5: 0.01    # Keep very low
     
     base_frame_id: "diff_drive/chassis"
     beam_skip_distance: 0.5
@@ -19,50 +22,263 @@ amcl:
     laser_max_range: 100.0
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
-    max_beams: 60
+    max_beams: 120
     
-    # ✅ MAXIMIZED: Even more particles for slip scenarios
-    max_particles: 8000   # Increased from 5000
-    min_particles: 2000   # Increased from 2000
+    # ✅ FEWER PARTICLES: EKF provides better odometry, so we need fewer particles
+    max_particles: 3000    # Reduced significantly
+    min_particles: 800     # Reduced significantly
     
-    odom_frame_id: "diff_drive/odom"
-    pf_err: 0.03          # Reduced for tighter particle convergence
+    # ✅ CRITICAL: Use EKF-filtered odometry instead of raw wheel odometry
+    odom_frame_id: "/diff_drive/odometry/filtered"
+    
+    pf_err: 0.08          # Increased - we trust EKF more than particles
     pf_z: 0.99
-    recovery_alpha_fast: 0.15    # Faster recovery from slip
-    recovery_alpha_slow: 0.002   # Slightly faster slow recovery
-    resample_interval: 1
+    recovery_alpha_fast: 0.05
+    recovery_alpha_slow: 0.0005
+    resample_interval: 3         # Less frequent - EKF handles fast updates
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
-    sigma_hit: 0.2
+    sigma_hit: 0.1              # Tighter - better localization expected
     tf_broadcast: true
+    tf_buffer_duration': 10.0
+    # ✅ SMALLER TOLERANCE: EKF should provide better transforms
+    transform_tolerance: 1.0    # Reduced with IMU
     
-    # ✅ RELAXED: Allow more transform lag during slip
-    transform_tolerance: 1.0    # Increased from 0.5
+    # ✅ LESS AGGRESSIVE UPDATES: EKF handles the fast corrections
+    update_min_a: 0.1     # Less sensitive with IMU
+    update_min_d: 0.1     # Less sensitive with IMU
     
-    # ✅ AGGRESSIVE: Very frequent updates during any movement
-    update_min_a: 0.1      # More sensitive to rotation
-    update_min_d: 0.1          # More sensitive to translation
-    
-    z_hit: 0.7
-    z_max: 0.05
-    z_rand: 0.3
+    z_hit: 0.85           # Higher confidence in measurements
+    z_max: 0.02
+    z_rand: 0.1           # Lower random noise
     z_short: 0.05
     scan_topic: /diff_drive/scan
     first_map_only: false
     use_map_topic: true
-    
-    initial_pose:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      yaw: 0.0
 
+# ✅ CRITICAL: Update controller to use EKF odometry
+controller_server:
+  ros__parameters:
+    use_sim_time: True
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.8
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    
+    # ✅ IMPORTANT: Use filtered odometry topic
+    odom_topic: "/diff_drive/odometry/filtered"  # EKF output instead of raw
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.3   # Can be tighter with IMU
+      movement_time_allowance: 12.0
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.5      # Tighter with better localization
+      yaw_goal_tolerance: 0.2
+
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: False
+      min_vel_x: 0.0
+      min_vel_y: 0.0
+      max_vel_x: 0.6            # Can be slightly faster with IMU
+      max_vel_y: 0.0
+      max_vel_theta: 0.4        # Still conservative
+      
+      min_speed_xy: 0.0
+      max_speed_xy: 0.6
+      min_speed_theta: 0.0
+      
+      # ✅ BALANCED: Can be less conservative with IMU feedback
+      acc_lim_x: 0.8           # Slightly faster acceleration
+      acc_lim_y: 0.0
+      acc_lim_theta: 0.5       # Faster angular acceleration with IMU
+      
+      decel_lim_x: -1.0
+      decel_lim_y: 0.0
+      decel_lim_theta: -0.8
+      
+      vx_samples: 10
+      vy_samples: 1
+      vtheta_samples: 20       # More samples for precision
+      sim_time: 2.0            # Shorter with better prediction
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      
+      transform_tolerance: 0.2  # Tighter with IMU
+      
+      xy_goal_tolerance: 0.5
+      trans_stopped_velocity: 0.05
+      short_circuit_trajectory_evaluation: True
+      stateful: True
+      
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 15.0      # Higher weight - better tracking
+      PathAlign.forward_point_distance: 0.25
+      GoalAlign.scale: 8.0
+      GoalAlign.forward_point_distance: 0.25
+      PathDist.scale: 12.0
+      GoalDist.scale: 18.0
+      RotateToGoal.scale: 8.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+      Oscillation.scale: 0.0
+
+# ✅ UPDATE: Costmaps also use filtered odometry
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 15.0
+      publish_frequency: 10.0
+      global_frame: diff_drive/odom    # This stays as odom frame
+      robot_base_frame: diff_drive/chassis
+      use_sim_time: True
+      rolling_window: true
+      width: 6
+      height: 6
+      resolution: 0.08           # Slightly coarser with better localization
+      robot_radius: 0.65         # Can be less conservative
+      
+      transform_tolerance: 0.3   # Tighter with IMU
+      
+      plugins: ["voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.8
+        inflation_radius: 0.647
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan depth_camera
+        scan:
+          topic: /diff_drive/scan
+          sensor_frame: diff_drive/lidar_link
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+        depth_camera:
+          topic: /filtered_points
+          sensor_frame: diff_drive/depth_camera_link
+          max_obstacle_height: 5.0
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      always_send_full_costmap: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 4.0
+      publish_frequency: 3.0
+      global_frame: map
+      robot_base_frame: diff_drive/chassis
+      use_sim_time: True
+      robot_radius: 0.65
+      resolution: 0.05
+      track_unknown_space: true
+      rolling_window: false
+      width: 2000
+      height: 2000
+      transform_tolerance: 0.3   # Tighter with IMU
+      
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan depth_camera
+        scan:
+          topic: /diff_drive/scan
+          sensor_frame: diff_drive/lidar_link
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+        depth_camera:
+          topic: /filtered_points
+          sensor_frame: diff_drive/depth_camera_link
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 1.0
+      always_send_full_costmap: True
+
+# ✅ UPDATED: Velocity smoother with IMU-aware parameters
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: True
+    smoothing_frequency: 30.0   # Still high but not excessive
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    
+    # ✅ LESS CONSERVATIVE: IMU provides better slip detection
+    max_velocity: [0.6, 0.0, 0.4]    # Can be faster with IMU
+    min_velocity: [0.0, 0.0, -0.4]
+    max_accel: [0.8, 0.0, 0.5]       # Faster acceleration with IMU
+    max_decel: [-1.0, 0.0, -0.8]
+    
+    topic: "cmd_vel"
+    smoothed_vel_topic: "diff_drive/cmd_vel"
+    
+    # ✅ CRITICAL: Use filtered odometry for velocity feedback
+    odom_topic: "/diff_drive/odometry/filtered"
+    
+    odom_duration: 0.1
+    deadband_velocity: [0.01, 0.0, 0.01]
+    velocity_timeout: 1.0
+
+# Keep other parameters the same...
 bt_navigator:
   ros__parameters:
     use_sim_time: True
     global_frame: map
     robot_base_frame: diff_drive/chassis
-    odom_topic: /diff_drive/odom
+    
+    # ✅ IMPORTANT: Use filtered odometry
+    odom_topic: /diff_drive/odometry/filtered
+    
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
@@ -122,195 +338,7 @@ bt_navigator:
     - nav2_drive_on_heading_cancel_bt_node
     - nav2_is_battery_charging_condition_bt_node
 
-controller_server:
-  ros__parameters:
-    use_sim_time: True
-    controller_frequency: 15.0    # Increased for better control
-    min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.8        # More tolerant during slip
-    progress_checker_plugin: "progress_checker"
-    goal_checker_plugins: ["general_goal_checker"]
-    controller_plugins: ["FollowPath"]
-    cmd_vel_topic: "cmd_vel"
-
-    progress_checker:
-      plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.8   # Reduced sensitivity
-      movement_time_allowance: 20.0   # More time for slip recovery
-
-    general_goal_checker:
-      stateful: True
-      plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.5          # Slightly more tolerant
-      yaw_goal_tolerance: 2.0         # More tolerant for orientation
-
-    FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: True
-      min_vel_x: -0.0
-      min_vel_y: 0.0
-      max_vel_x: 0.8            # Further reduced for slip control
-      max_vel_y: 0.0
-      
-      # ✅ DRASTICALLY REDUCED: Very slow rotation to prevent slip
-      max_vel_theta: 0.4       # Reduced from 0.8
-      
-      min_speed_xy: 0.0
-      max_speed_xy: 0.8          # Match max_vel_x
-      min_speed_theta: 0.0
-      acc_lim_x: 1.5             # Very gentle acceleration
-      acc_lim_y: 0.0
-      
-      # ✅ VERY GENTLE: Minimal acceleration to prevent slip
-      acc_lim_theta: 0.8     # Further reduced
-      
-      decel_lim_x: -1.5          # Gentle deceleration
-      decel_lim_y: 0.0
-      decel_lim_theta: -0.8       # Match acceleration limit
-      
-      vx_samples: 12              # Reduced samples for simpler trajectories
-      vy_samples: 1
-      vtheta_samples: 12          # Reduced samples
-      sim_time: 3.0               # Longer prediction time
-      linear_granularity: 0.05
-      angular_granularity: 0.025
-      
-      # ✅ MORE RELAXED: Account for slip delays
-      transform_tolerance: 0.4    # Increased from 0.2
-      
-      xy_goal_tolerance: 0.5
-      trans_stopped_velocity: 0.15  # Lower threshold
-      short_circuit_trajectory_evaluation: True
-      stateful: True
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      
-      BaseObstacle.scale: 0.01    # Higher obstacle avoidance
-      PathAlign.scale: 8.0        # Reduced for smoother turns
-      PathAlign.forward_point_distance: 0.2
-      GoalAlign.scale: 8.0        # Reduced
-      GoalAlign.forward_point_distance: 0.2
-      PathDist.scale: 8.0         # Reduced
-      GoalDist.scale: 12.0        # Reduced
-      RotateToGoal.scale: 8.0     # Increased for better goal alignment
-      RotateToGoal.slowing_factor: 8.0  # More aggressive slowing
-      RotateToGoal.lookahead_time: -1.0
-
-local_costmap:
-  local_costmap:
-    ros__parameters:
-      # ✅ MAXIMUM: Very high update rate for slip tracking
-      update_frequency: 20.0    # Increased from 15.0
-      publish_frequency: 15.0   # Increased from 10.0
-      
-      global_frame: diff_drive/odom
-      robot_base_frame: diff_drive/chassis
-      use_sim_time: True
-      rolling_window: true
-      width: 6                  # Slightly larger for better prediction
-      height: 6
-      resolution: 0.1
-      
-      # ✅ CONSERVATIVE: Larger safety margin during slip
-      robot_radius: 0.75        # Increased from 0.65
-      
-      plugins: ["voxel_layer", "inflation_layer"]
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5  # Reduced for smoother paths
-        inflation_radius: 0.6     # Slightly larger
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: True
-        publish_voxel_map: True
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        max_obstacle_height: 2.0
-        mark_threshold: 0
-        observation_sources: scan depth_camera
-        scan:
-          topic: /diff_drive/scan
-          sensor_frame: diff_drive/lidar_link
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
-          inf_is_valid: false
-        depth_camera:
-          topic: /filtered_points
-          sensor_frame: diff_drive/depth_camera_link
-          max_obstacle_height: 5.0
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
-          inf_is_valid: false
-      always_send_full_costmap: true
-      
-global_costmap:
-  global_costmap:
-    ros__parameters:
-      update_frequency: 3.0     # Slightly reduced to save computation
-      publish_frequency: 3.0
-      global_frame: map
-      robot_base_frame: diff_drive/chassis
-      use_sim_time: True
-      
-      # ✅ MATCH: Same as local costmap
-      robot_radius: 0.75        # Match local costmap
-      
-      resolution: 0.05
-      track_unknown_space: true
-      rolling_window: false
-      width: 2000
-      height: 2000
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        observation_sources: scan depth_camera
-        scan:
-          topic: /diff_drive/scan
-          sensor_frame: diff_drive/lidar_link
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
-          inf_is_valid: false
-        depth_camera:
-          topic: /filtered_points
-          sensor_frame: diff_drive/depth_camera_link
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
-          inf_is_valid: false
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 1.2   # Larger inflation for safer paths
-      always_send_full_costmap: True
-
+# Keep remaining parameters the same as original
 map_server:
   ros__parameters:
     use_sim_time: True
@@ -326,17 +354,17 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 10.0   # Reduced for stability
+    expected_planner_frequency: 10.0
     use_sim_time: True
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_smac_planner/SmacPlanner2D"
-      tolerance: 0.8              # More tolerant
+      tolerance: 0.5
       use_astar: false
       allow_unknown: true
       downsample_costmap: false
       downsampling_factor: 1
-      cost_travel_multiplier: 1.5 # Reduced for smoother paths
+      cost_travel_multiplier: 1.2
       smooth_path: True
 
 smoother_server:
@@ -345,15 +373,15 @@ smoother_server:
     smoother_plugins: ["simple_smoother"]
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0e-8         # Slightly relaxed
-      max_its: 1500             # More iterations for better smoothing
+      tolerance: 1.0e-8
+      max_its: 1500
       do_refinement: True
 
 behavior_server:
   ros__parameters:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
-    cycle_frequency: 15.0       # Increased frequency
+    cycle_frequency: 15.0
     behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
     spin:
       plugin: "nav2_behaviors/Spin"
@@ -367,17 +395,12 @@ behavior_server:
       plugin: "nav2_behaviors/AssistedTeleop"
     global_frame: diff_drive/odom
     robot_base_frame: diff_drive/chassis
-    
-    # ✅ RELAXED: More tolerance for slip
-    transform_tolerance: 0.5    # Increased from 0.2
-    
+    transform_tolerance: 0.3
     use_sim_time: true
-    simulate_ahead_time: 2.5    # Longer prediction
-    
-    # ✅ ULTRA CONSERVATIVE: Very slow rotations
-    max_rotational_vel: 0.4     # Further reduced from 0.8
-    min_rotational_vel: 0.1     # Much slower minimum
-    rotational_acc_lim: 1.0     # Very gentle acceleration
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 0.4
+    min_rotational_vel: 0.1
+    rotational_acc_lim: 0.8
 
 robot_state_publisher:
   ros__parameters:
@@ -394,32 +417,32 @@ waypoint_follower:
       enabled: True
       waypoint_pause_duration: 200
 
-velocity_smoother:
-  ros__parameters:
-    use_sim_time: True
+# velocity_smoother:
+#   ros__parameters:
+#     use_sim_time: True
     
-    # ✅ MAXIMUM: Highest frequency for slip mitigation
-    smoothing_frequency: 30.0   # Increased from 20.0
+#     # ✅ MAXIMUM: Highest frequency for slip mitigation
+#     smoothing_frequency: 30.0   # Increased from 20.0
     
-    scale_velocities: False
-    feedback: "OPEN_LOOP"
+#     scale_velocities: False
+#     feedback: "OPEN_LOOP"
     
-    # ✅ ULTRA CONSERVATIVE: Very slow speeds
-    max_velocity: [0.8, 0.0, 0.4]    # Further reduced
-    min_velocity: [-0.0, 0.0, -0.4]
-    max_accel: [1.5, 0.0, 0.8]       # Very gentle acceleration
-    max_decel: [-1.5, 0.0, -1.5]     # Very gentle deceleration
+#     # ✅ ULTRA CONSERVATIVE: Very slow speeds
+#     max_velocity: [0.8, 0.0, 0.4]    # Further reduced
+#     min_velocity: [-0.0, 0.0, -0.4]
+#     max_accel: [1.5, 0.0, 0.8]       # Very gentle acceleration
+#     max_decel: [-1.5, 0.0, -1.5]     # Very gentle deceleration
     
-    topic: "cmd_vel"
-    smoothed_vel_topic: "diff_drive/cmd_vel"
-    odom_topic: "diff_drive/odom"
-    odom_duration: 0.15         # Longer history for smoothing
-    deadband_velocity: [0.0, 0.0, 0.0]
-    velocity_timeout: 1.5       # Longer timeout
+#     topic: "cmd_vel"
+#     smoothed_vel_topic: "diff_drive/cmd_vel"
+#     odom_topic: "diff_drive/odom"
+#     odom_duration: 0.15         # Longer history for smoothing
+#     deadband_velocity: [0.0, 0.0, 0.0]
+#     velocity_timeout: 1.5       # Longer timeout
 
 docking_server:
   ros__parameters:
-    docking_pose: [-13.436, -3.304, 0.029]  # [x, y, yaw]
+    docking_pose: [-13.91, -4.36, 0.677]  # [x, y, yaw]
     docking_tolerance: 0.5  # meters
     approach_distance: 0.5  # meters
     undock_distance: 2.0  # meters to move backward during undock

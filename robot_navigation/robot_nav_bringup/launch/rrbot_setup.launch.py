@@ -1,26 +1,12 @@
-# Copyright 2022 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, TimerAction
 from launch.actions import IncludeLaunchDescription
 from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
@@ -67,8 +53,10 @@ def generate_launch_description():
        package='rviz2',
        executable='rviz2',
        arguments=['-d', os.path.join(pkg_project_bringup, 'config', 'basic_nav.rviz')],
-       condition=IfCondition(LaunchConfiguration('rviz'))
+       condition=IfCondition(LaunchConfiguration('rviz')),
+       parameters=[{'use_sim_time': True}]  # ✅ ADDED: use_sim_time for RViz
     )
+    
     docking_server = Node(
         package='robot_nav_bringup',
         executable='docking_server.py',
@@ -77,7 +65,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True},
                     os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml')]
     )    
-    # Bridge ROS topics and Gazebo messages for establishing communication
+    
     # Bridge ROS topics and Gazebo messages for establishing communication
     bridge = Node(
         package='ros_gz_bridge',
@@ -88,7 +76,7 @@ def generate_launch_description():
         }],
         output='screen'
     )
-    # Add this to your second launch file, before the return statement
+    
     cmd_vel_relay = Node(
         package='topic_tools',
         executable='relay',
@@ -100,6 +88,7 @@ def generate_launch_description():
         }],
         output='screen'
     )
+    
     # Static transform publishers
     odom_to_base_footprint_tf = Node(
         package='tf2_ros',
@@ -107,13 +96,15 @@ def generate_launch_description():
         arguments=['0', '0', '0', '0', '0', '0', 'diff_drive/odom', 'diff_drive/base_footprint'],
         output='screen'
     )
-    # Add this to your launch file as a temporary test
+    
+    # ✅ COMMENT OUT: This static transform conflicts with AMCL
     map_to_odom_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         arguments=['0', '0', '0', '0', '0', '0', 'map', 'diff_drive/odom'],
         output='screen'
     )
+    
     base_footprint_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -121,69 +112,72 @@ def generate_launch_description():
         output='screen'
     )
 
-    # SOLUTION 1: Single combined navigation launch (RECOMMENDED)
-    # This includes both localization and navigation in one launch file
-    combined_nav_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            os.path.join(get_package_share_directory('nav2_bringup'), 'launch'),
-            '/bringup_launch.py'
-        ]),
-        launch_arguments={
-            'map': os.path.join(pkg_project_bringup, 'maps', 'room2.yaml'),
-            'use_sim_time': 'True',
-            'params_file': os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml')
-        }.items(),
-        condition=IfCondition(LaunchConfiguration('navigation'))
+    # ✅ ADDED: Lidar transform (CRITICAL for laser scan processing)
+    lidar_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        arguments=['0', '0', '0.2', '0', '0', '0', 'diff_drive/chassis', 'diff_drive/lidar_link'],
+        output='screen'
     )
 
-    # SOLUTION 2: Sequential launch with event handler (ALTERNATIVE)
-    # Uncomment this section and comment out SOLUTION 1 if you prefer separate launches
-    """
-    # Localization launch 
-    localization_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_project_bringup, 'launch', 'localization.launch.py')),
-        launch_arguments={
-            'map': os.path.join(pkg_project_bringup, 'maps', 'my_map.yaml'),
-            'use_sim_time': 'True',
-            'params_file': os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml')
-        }.items(),
-        condition=IfCondition(LaunchConfiguration('localization'))
+    ekf_config_path = PathJoinSubstitution([pkg_project_bringup, 'config', 'ekf.yaml'])
+    robot_localization_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[ekf_config_path, {'use_sim_time': True,'scan_topic': '/diff_drive/scan',
+                                    'base_frame': 'diff_drive/chassis',
+                                    'odom_frame': 'diff_drive/odom'}],
+        remappings=[
+            ('/odometry/filtered', '/diff_drive/odometry/filtered'),
+            ('/odom/diff_drive', '/diff_drive/odom')  # ✅ Ensure proper odom topic
+        ]
+    )
+    
+    # Slip detector node
+    slip_detector_node = Node(
+        package='robot_nav_bringup',
+        executable='slip_detector.py',
+        name='slip_detector',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
     )
 
-    # Navigation launch that starts after localization
-    navigation_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_project_bringup, 'launch', 'navigation.launch.py')),
-        launch_arguments={
-            'use_sim_time': 'True',
-            'params_file': os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml'),
-            'use_lifecycle_mgr': 'false'  # Don't start another lifecycle manager
-        }.items(),
-        condition=IfCondition(LaunchConfiguration('navigation'))
+    # ✅ ADDED: Delayed navigation launch to ensure TF is established
+    delayed_navigation = TimerAction(
+        period=10.0,  # Wait 10 seconds for TF to stabilize
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    os.path.join(get_package_share_directory('nav2_bringup'), 'launch'),
+                    '/bringup_launch.py'
+                ]),
+                launch_arguments={
+                    'map': os.path.join(pkg_project_bringup, 'maps', 'room2.yaml'),
+                    'use_sim_time': 'True',
+                    'params_file': os.path.join(pkg_project_bringup, 'config', 'nav2_params.yaml'),
+                    'autostart': 'true'  # ✅ Ensure autostart is enabled
+                }.items(),
+                condition=IfCondition(LaunchConfiguration('navigation'))
+            )
+        ]
     )
 
-    # Event handler to start navigation after localization
-    navigation_event_handler = RegisterEventHandler(
-        OnProcessExit(
-            target_action=localization_launch,
-            on_exit=[navigation_launch],
-        ),
-        condition=IfCondition(LaunchConfiguration('navigation'))
-    )
-    """
-    # lidar_tf = Node(
-    #     package='tf2_ros',
-    #     executable='static_transform_publisher',
-    #     arguments=['0', '0', '0.5', '0', '0', '0', 'diff_drive/chassis', 'diff_drive/lidar_link'],
-    #     output='screen'
-    # )
     pointcloud_filter = Node(
         package='robot_nav_bringup',
         executable='pointcloud_filter.py',
         name='pointcloud_filter',
         output='screen',
         parameters=[{'use_sim_time': True}]
+    )
+
+    # ✅ ADDED: Event handler to ensure proper startup sequence
+    navigation_event_handler = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=bridge,
+            on_start=[delayed_navigation]
+        )
     )
 
     return LaunchDescription([
@@ -196,23 +190,28 @@ def generate_launch_description():
                               description='Launch only localization (deprecated - use navigation instead).'),
         DeclareLaunchArgument('navigation', default_value='true',
                               description='Launch full navigation stack (includes localization).'),
-        docking_server,
+
         # Core nodes
-        base_footprint_tf,
-        cmd_vel_relay,
-        map_to_odom_tf,
-        odom_to_base_footprint_tf,
-        
-        
         gz_sim,
         bridge,
         robot_state_publisher,
+        
+        # TF transforms (CRITICAL for timing)
+        map_to_odom_tf,  # ✅ COMMENTED OUT: Conflicts with AMCL
+        base_footprint_tf,
+        odom_to_base_footprint_tf,
+        lidar_tf,  # ✅ ADDED: Lidar transform
+        
+        # Localization nodes
+        robot_localization_node,
+        slip_detector_node,
+        
+        # Other functionality
+        cmd_vel_relay,
+        docking_server,
+        pointcloud_filter,
         rviz,
         
-        # Navigation (includes localization)
-        combined_nav_launch,
-        pointcloud_filter
-        # Uncomment these lines if using SOLUTION 2 instead
-        # localization_launch,
-        # navigation_event_handler,
+        # ✅ Navigation with proper timing
+        navigation_event_handler,
     ])

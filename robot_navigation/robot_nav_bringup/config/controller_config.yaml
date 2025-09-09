@@ -1,7 +1,7 @@
 controller_manager:
   ros__parameters:
     use_sim_time: true  # CRITICAL: This was missing
-    update_rate: 100  # Hz
+    update_rate: 50  # Hz
     robot_description_topic: "/robot_description"  # Add this
     
     # Hardware interface - CRITICAL: This was missing

@@ -21,7 +21,8 @@
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>
-  
+  <depend>robot_localization</depend>
+
   <!-- ROS 2 control dependencies -->
   <depend>ros2_control</depend>
   <depend>ros2_controllers</depend>
